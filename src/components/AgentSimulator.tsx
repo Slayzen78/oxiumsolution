@@ -11,7 +11,7 @@ import { Play, RotateCcw, Send, Terminal, Cpu, CheckCircle2 } from 'lucide-react
 // ==========================================
 // CONFIGURATION DE VOTRE WEBHOOK MAKE
 // ==========================================
-const MAKE_WEBHOOK_URL = 'https://hook.eu1.make.com/i1ja40drhcv06rxfyae4p4hyi7hvuc5k'; 
+const MAKE_WEBHOOK_URL = 'https://hook.eu1.make.com/bkvlhv8xgrk3jwjzbo5jnn1ijccun2cb'; 
 // ^ Remplacez VOTRE_URL_WEBHOOK_MAKE par l'adresse copiée sur Make
 // Exemple : 'https://hook.us1.make.com/xxxxxxxxx'
 
