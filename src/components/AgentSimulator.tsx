@@ -6,14 +6,12 @@
 import { useState, useEffect, useRef, FormEvent } from 'react';
 import { AI_AGENTS } from '../data/agents';
 import { AIAgent, ChatMessage } from '../types';
-import { GoogleGenAI } from '@google/genai'; // 🚀 Importation du SDK Gemini
 import { 
   RotateCcw, 
   Send, 
   Terminal, 
   Cpu, 
   CheckCircle2, 
-  Activity,
   Zap
 } from 'lucide-react';
 
@@ -31,9 +29,6 @@ export default function AgentSimulator({ initialAgentId }: AgentSimulatorProps) 
   const [logs, setLogs] = useState<string[]>([]);
   const messageEndRef = useRef<HTMLDivElement>(null);
 
-  // Mode de test figé sur 'Gemini AI Direct' désormais
-  const [sessionId, setSessionId] = useState<string>('');
-
   // Sync prop changes
   useEffect(() => {
     if (initialAgentId) {
@@ -43,11 +38,6 @@ export default function AgentSimulator({ initialAgentId }: AgentSimulatorProps) 
       }
     }
   }, [initialAgentId]);
-
-  // Initial setup
-  useEffect(() => {
-    setSessionId('session-' + Math.random().toString(36).substring(2, 11));
-  }, []);
 
   // Sync state when agent changes
   useEffect(() => {
@@ -73,17 +63,15 @@ export default function AgentSimulator({ initialAgentId }: AgentSimulatorProps) 
       },
     ]);
     setLogs([]);
-    const generatedSession = 'session-' + Math.random().toString(36).substring(2, 11);
-    setSessionId(generatedSession);
     
     addLog(`Démarrage de '${selectedAgent.name}'...`);
-    addLog(`GEMINI_ENGINE >> Modèle gemini-2.5-flash sélectionné.`);
-    addLog(`SYS >> Instructions système injectées pour ${selectedAgent.name}.`);
+    addLog(`GEMINI_ENGINE >> Modèle gemini-2.5-flash prêt.`);
+    addLog(`SYS >> Instructions système configurées pour ${selectedAgent.name}.`);
     addLog(`Sécurisation SSL active. Prêt.`);
   };
 
   /**
-   * Action principale : Envoi du message directement à l'API Google Gemini
+   * Action principale : Envoi du message à notre fonction API sécurisée sur Vercel
    */
   const handleSendMessage = async (e: FormEvent) => {
     e.preventDefault();
@@ -103,17 +91,10 @@ export default function AgentSimulator({ initialAgentId }: AgentSimulatorProps) 
     setMessages((prev) => [...prev, userMsg]);
     setIsTyping(true);
     addLog(`USER >> ${userText}`);
-    addLog(`GEMINI_API_POST >> Requête envoyée à Google AI Studio...`);
+    addLog(`API_POST >> Envoi de la requête au serveur sécurisé /api/chat...`);
 
     try {
-      // Récupérer la clé API stockée dans l'environnement (Vercel ou local)
-      // Sur Vercel (Frontend), les clés doivent être préfixées par VITE_ si l'on veut y accéder sur le client de cette façon, 
-      // mais l'environnement de build d'AI Studio injecte classiquement import.meta.env.VITE_GEMINI_API_KEY ou process.env.
-      const apiKey = (import.meta.env?.VITE_GEMINI_API_KEY) || (import.meta.env?.GEMINI_API_KEY) || "";
-      
-      const ai = new GoogleGenAI({ apiKey: apiKey });
-
-      // 2. Construire un prompt système personnalisé selon l'agent choisi par l'utilisateur
+      // 2. Préparer les consignes métier de l'agent sélectionné
       const systemInstruction = `
         Tu es un agent d'intelligence artificielle haut de gamme pour Axium Solutions.
         Ton identité actuelle : ${selectedAgent.name}.
@@ -125,18 +106,26 @@ export default function AgentSimulator({ initialAgentId }: AgentSimulatorProps) 
         - Réponds directement en français.
       `;
 
-      // 3. Appel direct à l'API Gemini
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: userText,
-        config: {
-          systemInstruction: systemInstruction,
-          temperature: 0.7,
-        }
+      // 3. Appeler notre route API Vercel sécurisée
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: userText,
+          systemInstruction: systemInstruction
+        }),
       });
 
-      const replyText = response.text || "Désolé, je n'ai pas pu formuler de réponse.";
-      addLog(`GEMINI_RESPONSE >> Succès. Réponse générée (${replyText.length} caractères).`);
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || `Erreur HTTP ${res.status}`);
+      }
+
+      const data = await res.json();
+      const replyText = data.text || "Désolé, je n'ai pas pu formuler de réponse.";
+      addLog(`GEMINI_RESPONSE >> Succès ! Réponse reçue.`);
 
       // 4. Ajouter la réponse de l'IA à l'écran
       const agentMsg: ChatMessage = {
@@ -150,12 +139,12 @@ export default function AgentSimulator({ initialAgentId }: AgentSimulatorProps) 
 
     } catch (err: any) {
       console.error(err);
-      addLog(`ERR_GEMINI >> Échec de la communication avec l'IA.`);
+      addLog(`ERR_SERVER >> Impossible d'obtenir une réponse de /api/chat.`);
       
       const errorMsg: ChatMessage = {
         id: `sys-err-${Date.now()}`,
         sender: 'system',
-        content: `❌ Impossible de contacter Google Gemini.\n\nDétail de l'erreur : ${err.message || err}\n\nSolutions :\n1. Vérifiez que vous avez bien ajouté la clé "GEMINI_API_KEY" ou "VITE_GEMINI_API_KEY" dans vos variables d'environnement Vercel.\n2. Assurez-vous que le déploiement a bien été rafraîchi (Redeploy) sur Vercel.`,
+        content: `❌ Échec de la communication avec l'IA.\n\nDétail : ${err.message || err}\n\nSolutions :\n1. Vérifie que tu as bien créé le fichier api/chat.js à la racine de ton projet.\n2. Assure-toi d'avoir ajouté ta clé "GEMINI_API_KEY" dans l'onglet Environment Variables sur Vercel.\n3. Re-lance un "Redeploy" sur Vercel pour mettre à jour l'application.`,
         timestamp: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
       };
       setMessages((prev) => [...prev, errorMsg]);
@@ -165,10 +154,10 @@ export default function AgentSimulator({ initialAgentId }: AgentSimulatorProps) 
   };
 
   const getLogColorClass = (logLine: string) => {
-    if (logLine.includes('ERR_GEMINI') || logLine.includes('Erreur')) {
+    if (logLine.includes('ERR_SERVER') || logLine.includes('Erreur')) {
       return 'text-rose-450 font-semibold';
     }
-    if (logLine.includes('GEMINI_API_POST')) {
+    if (logLine.includes('API_POST')) {
       return 'text-sky-400';
     }
     if (logLine.includes('GEMINI_RESPONSE') || logLine.includes('Succès')) {
@@ -206,7 +195,7 @@ export default function AgentSimulator({ initialAgentId }: AgentSimulatorProps) 
             </p>
           </div>
 
-          {/* Engine Selector View */}
+          {/* Engine Status View */}
           <div className="space-y-2">
             <p className="text-[10px] text-zinc-500 font-mono font-medium uppercase tracking-wider">
               Moteur de test de l'agent :
@@ -215,7 +204,7 @@ export default function AgentSimulator({ initialAgentId }: AgentSimulatorProps) 
               <Zap className="w-4 h-4 text-amber-500 fill-amber-500 animate-pulse" />
               <div className="flex flex-col">
                 <span className="text-xs font-semibold text-zinc-100">Intégration Gemini Directe</span>
-                <span className="text-[10px] text-zinc-400">Pas d'intermédiaire, latence minimale</span>
+                <span className="text-[10px] text-zinc-400">Canal sécurisé via API Vercel</span>
               </div>
             </div>
           </div>
@@ -315,7 +304,7 @@ export default function AgentSimulator({ initialAgentId }: AgentSimulatorProps) 
                 <Cpu className="w-2.5 h-2.5 text-zinc-500" /> CONSOLE DE FLUX GEMINI AI
               </span>
               <span className="text-emerald-400 uppercase text-[8px] font-semibold flex items-center gap-1">
-                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping"></span> CLÉ API READY
+                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping"></span> SECURE API
               </span>
             </div>
             {logs.length === 0 ? (
