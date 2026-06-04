@@ -6,7 +6,14 @@
 import { useState, useEffect, useRef, FormEvent } from 'react';
 import { AI_AGENTS } from '../data/agents';
 import { AIAgent, ChatMessage } from '../types';
-import { Play, RotateCcw, Send, Terminal, Cpu, CheckCircle2, Shield } from 'lucide-react';
+import { Play, RotateCcw, Send, Terminal, Cpu, CheckCircle2 } from 'lucide-react';
+
+// ==========================================
+// CONFIGURATION DE VOTRE WEBHOOK MAKE
+// ==========================================
+const MAKE_WEBHOOK_URL = 'VOTRE_URL_WEBHOOK_MAKE'; 
+// ^ Remplacez VOTRE_URL_WEBHOOK_MAKE par l'adresse copiée sur Make
+// Exemple : 'https://hook.us1.make.com/xxxxxxxxx'
 
 interface AgentSimulatorProps {
   initialAgentId?: string;
@@ -63,6 +70,7 @@ export default function AgentSimulator({ initialAgentId }: AgentSimulatorProps) 
     addLog(`Sécurisation SSL active. Prêt.`);
   };
 
+  // 1. GESTION DES CLICS SUR LES BOUTONS PRÉDÉFINIS
   const handlePresetQuestion = async (promptText: string, index: number) => {
     if (isTyping || isPlayingDemo) return;
 
@@ -75,31 +83,50 @@ export default function AgentSimulator({ initialAgentId }: AgentSimulatorProps) 
 
     setMessages((prev) => [...prev, userMsg]);
     addLog(`USER >> ${promptText}`);
-
-    const matchingDialog = selectedAgent.demoDialog.find((d) => d.userPrompt === promptText);
-    const responses = matchingDialog ? matchingDialog.agentResponses : ["Bien sûr, je comprends. Pourrions-nous en discuter lors d'un audit approfondi ?"];
-
     setIsTyping(true);
-    addLog(`SYS >> Calcul du contexte de l'assistant...`);
-    
-    // Sim streaming delays
-    for (let i = 0; i < responses.length; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 800));
-      
+    addLog(`SYS_API >> Connexion Webhook (Scénario)...`);
+
+    try {
+      // Appel à Make
+      const response = await fetch(MAKE_WEBHOOK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          message: promptText,
+          agent: selectedAgent.id 
+        }),
+      });
+
+      if (!response.ok) throw new Error("Erreur serveur Make");
+
+      const responseText = await response.text();
+
       const agentMsg: ChatMessage = {
-        id: `agent-${Date.now()}-${i}`,
+        id: `agent-${Date.now()}`,
         sender: 'agent',
-        content: responses[i],
+        content: responseText || "L'agent a répondu avec succès, mais le message est vide.",
         timestamp: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
       };
 
       setMessages((prev) => [...prev, agentMsg]);
-      addLog(`AGENT >> Réponse générée (${responses[i].length} cars)`);
+      addLog(`AGENT >> Réponse générée via Make.`);
+    } catch (error) {
+      console.error(error);
+      addLog(`ERR >> Échec de la connexion avec l'agent.`);
+      
+      // Message de secours affiché dans le chat en cas de panne
+      setMessages((prev) => [...prev, {
+        id: `agent-error-${Date.now()}`,
+        sender: 'agent',
+        content: "Désolé, je rencontre des difficultés pour joindre mon serveur central. Veuillez vérifier la configuration de votre Webhook.",
+        timestamp: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+      }]);
+    } finally {
+      setIsTyping(false);
     }
-
-    setIsTyping(false);
   };
 
+  // 2. GESTION DE LA ZONE DE TEXTE LIBRE (QUAND ON ÉCRIT ET APPUIE SUR ENTREE)
   const handleSendMessage = async (e: FormEvent) => {
     e.preventDefault();
     if (!inputVal.trim() || isTyping || isPlayingDemo) return;
@@ -117,34 +144,46 @@ export default function AgentSimulator({ initialAgentId }: AgentSimulatorProps) 
     setMessages((prev) => [...prev, userMsg]);
     addLog(`USER (custom) >> ${userText}`);
     setIsTyping(true);
-    addLog(`SYS_API >> Évaluation sémantique...`);
+    addLog(`SYS_API >> Transmission des données à Make...`);
 
-    // Simulate response delay
-    await new Promise((resolve) => setTimeout(resolve, 1200));
+    try {
+      // Requête HTTP POST vers votre scénario Make
+      const response = await fetch(MAKE_WEBHOOK_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          message: userText,
+          agent: selectedAgent.id 
+        }),
+      });
 
-    let responseText = "C'est une excellente question relative à nos intégrations logicielles. Nos agents s'interfacent directement sur vos outils existants via des APIs sécurisées.";
-    
-    const lowercaseText = userText.toLowerCase();
-    if (lowercaseText.includes('prix') || lowercaseText.includes('tarif') || lowercaseText.includes('coût') || lowercaseText.includes('combien')) {
-      responseText = "Nos agents IA sont conçus sur mesure. Les forfaits d'intégration dépendent de vos workflows opérationnels exacts. Nos tarifs mensuels sont calculés en fonction des volumes d'exécution de vos agents. Nous vous invitons à réserver un créneau gratuit pour évaluer vos potentiels d'économies.";
-    } else if (lowercaseText.includes('sécurité') || lowercaseText.includes('données') || lowercaseText.includes('rgpd') || lowercaseText.includes('secure')) {
-      responseText = "La confidentialité est primordiale pour Axium Solutions. Toutes vos informations internes sont stockées et exécutées sur des clouds souverains isolés d'Europe, en conformité totale avec le RGPD.";
-    } else if (lowercaseText.includes('rdv') || lowercaseText.includes('rendez-vous') || lowercaseText.includes('planifier') || lowercaseText.includes('contact')) {
-      responseText = "Bien sûr ! Vous pouvez choisir un créneau horaire en direct à l'aide de notre bouton 'Prendre RDV' situé dans le menu supérieur.";
-    } else if (lowercaseText.includes('humain') || lowercaseText.includes('vrai') || lowercaseText.includes('robot')) {
-      responseText = "Je suis une simulation d'agent virtuel Axium Solutions. En production, nos architectures reproduisent fidèlement l'expertise métier de vos fiches pratiques.";
+      if (!response.ok) throw new Error("Erreur de communication");
+
+      // Récupération de la réponse renvoyée par le module Webhook Response de Make
+      const responseText = await response.text();
+
+      const agentMsg: ChatMessage = {
+        id: `agent-custom-reply-${Date.now()}`,
+        sender: 'agent',
+        content: responseText || "L'agent n'a renvoyé aucun texte. Vérifiez votre module Webhook Response.",
+        timestamp: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+      };
+
+      setMessages((prev) => [...prev, agentMsg]);
+      addLog(`AGENT >> Réponse dynamique reçue.`);
+    } catch (error) {
+      console.error(error);
+      addLog(`ERR >> Impossible de joindre l'agent IA.`);
+      
+      setMessages((prev) => [...prev, {
+        id: `agent-custom-error-${Date.now()}`,
+        sender: 'agent',
+        content: "Une erreur s'est produite lors de la connexion avec l'agent IA. Vérifiez votre scénario Make.",
+        timestamp: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+      }]);
+    } finally {
+      setIsTyping(false);
     }
-
-    const agentMsg: ChatMessage = {
-      id: `agent-custom-reply-${Date.now()}`,
-      sender: 'agent',
-      content: responseText,
-      timestamp: new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
-    };
-
-    setMessages((prev) => [...prev, agentMsg]);
-    addLog(`AGENT >> Réponse dynamique envoyée.`);
-    setIsTyping(false);
   };
 
   return (
