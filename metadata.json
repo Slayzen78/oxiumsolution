@@ -1,0 +1,6 @@
+{
+  "name": "Axium Solutions",
+  "description": "Landing page de haute qualité pour Axium Solutions, experts en agents IA haut de gamme.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
